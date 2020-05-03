@@ -68,6 +68,13 @@ func DecodeInstr(data []byte) Instruction {
 	case InstrType_METER:
 		a = new(InstrMeter)
 	case InstrType_EXPERIMENTER:
+		vendorType := binary.BigEndian.Uint32(data[4:])
+		if int(vendorType) == ONF_EXPERIMENTER_ID {
+			switch binary.BigEndian.Uint32(data[8:]) {
+			case ONFIST_ET_EVICTION_IMPORTANCE:
+				a = new(EvictionImportanceInstruction)
+			}
+		}
 	}
 
 	a.UnmarshalBinary(data)

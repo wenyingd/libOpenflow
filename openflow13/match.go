@@ -1519,7 +1519,6 @@ func NewArpSpaField(arpSpa net.IP) *MatchField {
 	return f
 }
 
-
 // ACTSET_OUTPUT field
 type ActsetOutputField struct {
 	OutputPort uint32

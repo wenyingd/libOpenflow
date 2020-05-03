@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"net"
 	"testing"
 )
@@ -580,6 +582,104 @@ func TestTLVTableReplyMessage(t *testing.T) {
 	tlvReplyMessage := NewNXTVendorHeader(Type_TlvTableReply)
 	tlvReplyMessage.VendorData = reply
 	testFunc(tlvReplyMessage)
+}
+
+func TestSetFlowEviction(t *testing.T) {
+	testFunc := func(oriMessage *SetFlowEviction) {
+		data, err := oriMessage.MarshalBinary()
+		if err != nil {
+			t.Fatalf("Failed to Marshal message: %v", err)
+		}
+		newMessage := new(SetFlowEviction)
+		err = newMessage.UnmarshalBinary(data)
+		if err != nil {
+			t.Fatalf("Failed to UnMarshal message: %v", err)
+		}
+		if err := setFlowEvictionEqual(oriMessage, newMessage); err != nil {
+			t.Errorf(err.Error())
+		}
+	}
+	msg1 := &SetFlowEviction{EvictionEnabled: true, TableID: uint8(10)}
+	msg2 := &SetFlowEviction{EvictionEnabled: false, TableID: uint8(10)}
+	for _, msg := range []*SetFlowEviction{msg1, msg2} {
+		testFunc(msg)
+	}
+}
+
+func setFlowEvictionEqual(oriMessage, newMessage *SetFlowEviction) error {
+	if oriMessage.TableID != newMessage.TableID {
+		return fmt.Errorf("SetFlowEviction table ID not equal")
+	}
+	if oriMessage.EvictionEnabled != newMessage.EvictionEnabled {
+		return fmt.Errorf("SetFlowEviction enabled not equal")
+	}
+	return nil
+}
+
+func TestFlowEvictionMessage(t *testing.T) {
+	testFunc := func(oriMessage *VendorHeader) {
+		data, err := oriMessage.MarshalBinary()
+		if err != nil {
+			t.Fatalf("Failed to Marshal message: %v", err)
+		}
+		newMessage := new(VendorHeader)
+		err = newMessage.UnmarshalBinary(data)
+		if err != nil {
+			t.Fatalf("Failed to UnMarshal message: %v", err)
+		}
+		if oriMessage.Header.Type != newMessage.Header.Type {
+			t.Errorf("Message type not equal")
+		}
+		if oriMessage.Vendor != newMessage.Vendor {
+			t.Errorf("Vendor not equal")
+		}
+		if oriMessage.ExperimenterType != newMessage.ExperimenterType {
+			t.Errorf("Experimenter type not equal")
+		}
+		oriData, err := oriMessage.VendorData.MarshalBinary()
+		require.Nil(t, err, "no error expected for the original message")
+		newData, err := newMessage.VendorData.MarshalBinary()
+		require.Nil(t, err, "no error expected for the new message")
+		assert.True(t, bytes.Equal(oriData, newData), "vendor data not equal")
+	}
+	msg1 := NewSetFlowEvictionMessage(uint8(10), true)
+	msg2 := NewGetFlowEvictionReplyMessage(uint8(10))
+	msg3 := NewGetFlowEvictionRequestMessage(uint8(10))
+	for _, msg := range []*VendorHeader{msg1, msg2, msg3} {
+		testFunc(msg)
+	}
+}
+
+func TestEvictionImportanceInstruction(t *testing.T) {
+	testFunc := func(oriMessage *EvictionImportanceInstruction) {
+		data, err := oriMessage.MarshalBinary()
+		if err != nil {
+			t.Fatalf("Failed to Marshal message: %v", err)
+		}
+		newMessage := new(EvictionImportanceInstruction)
+		err = newMessage.UnmarshalBinary(data)
+		if err != nil {
+			t.Fatalf("Failed to UnMarshal message: %v", err)
+		}
+		if oriMessage.Type != newMessage.Type {
+			t.Error("EvictionImportanceInstruction type not equal")
+		}
+		if oriMessage.Length != newMessage.Length {
+			t.Error("EvictionImportanceInstruction length not equal")
+		}
+		if oriMessage.Vendor != newMessage.Vendor {
+			t.Error("EvictionImportanceInstruction vendor not equal")
+		}
+		if oriMessage.ExperimenterType != newMessage.ExperimenterType {
+			t.Error("EvictionImportanceInstruction experimenter type not equal")
+		}
+		if oriMessage.Importance != newMessage.Importance {
+			t.Error("EvictionImportanceInstruction importance not equal")
+		}
+	}
+
+	msg := NewEvictionImportanceInstruction(uint16(1001))
+	testFunc(msg)
 }
 
 func tlvTableReplyEqual(oriMessage, newMessage *TLVTableReply) error {

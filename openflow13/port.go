@@ -195,6 +195,10 @@ const (
 	PC_NO_RECV      = 1 << 2
 	PC_NO_FWD       = 1 << 5
 	PC_NO_PACKET_IN = 1 << 6
+
+	PC_NO_STP      = 1 << 1
+	PC_NO_RECV_STP = 1 << 3
+	PC_NO_FLOOD    = 1 << 4
 )
 
 // ofp_port_state 1.3
