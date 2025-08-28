@@ -380,10 +380,8 @@ func (p *ContinuationPropStack) UnmarshalBinary(data []byte) error {
 		return errors.New("the []byte is too short to unmarshal a full ContinuationPropStack message")
 	}
 	n += int(p.PropHeader.Len())
-	for _, eachStack := range p.Stack {
-		data[n] = eachStack
-		n++
-	}
+	p.Stack = make([]byte, int(p.Length)-n)
+	copy(p.Stack, data[n:])
 	return nil
 }
 
@@ -775,14 +773,17 @@ type PacketIn2PropPacket struct {
 }
 
 func (p *PacketIn2PropPacket) Len() (n uint16) {
-	n = p.PropHeader.Len() + p.Packet.Len()
+	return uint16(p.actLength())
+}
 
+func (p *PacketIn2PropPacket) actLength() int {
+	n := int(p.PropHeader.Len()) + int(p.Packet.Len())
 	// Round it to closest multiple of 8
 	return ((n + 7) / 8) * 8
 }
 
 func (p *PacketIn2PropPacket) MarshalBinary() (data []byte, err error) {
-	data = make([]byte, p.Len())
+	data = make([]byte, p.actLength())
 	var b []byte
 	n := 0
 
@@ -1195,6 +1196,7 @@ func DecodePacketIn2Prop(data []byte) (Property, error) {
 	var p Property
 	switch t {
 	case NXPINT_PACKET:
+		klog.V(7).InfoS("Decoding a packetIn with property NXPINT_PACKET", "data_length", len(data))
 		p = new(PacketIn2PropPacket)
 	case NXPINT_FULL_LEN:
 		p = new(PacketIn2PropFullLen)
@@ -1235,33 +1237,60 @@ func (p *PacketIn2) Len() (n uint16) {
 }
 
 func (p *PacketIn2) MarshalBinary() (data []byte, err error) {
-	data = make([]byte, p.Len())
+	return marshalMultipleProperties(p.Props)
+}
+
+func (p *PacketIn2) UnmarshalBinary(data []byte) error {
+	props, err := unMarshalPacketIn2MultipleProperties(data)
+	if err != nil {
+		return err
+	}
+	p.Props = append(p.Props, props...)
+	return nil
+}
+
+func marshalMultipleProperties(props []Property) (data []byte, err error) {
+	totalLen := 0
+	for _, prop := range props {
+		totalLen += getPacketIn2PropertyLength(prop)
+	}
+
+	data = make([]byte, totalLen)
 	n := 0
 
-	for _, prop := range p.Props {
+	for _, prop := range props {
 		b, err := prop.MarshalBinary()
 		if err != nil {
 			return nil, err
 		}
 		copy(data[n:], b)
-		n += int(prop.Len())
+		n += getPacketIn2PropertyLength(prop)
 	}
 	return
 }
 
-func (p *PacketIn2) UnmarshalBinary(data []byte) error {
-	n := 0
+func unMarshalPacketIn2MultipleProperties(data []byte) ([]Property, error) {
+	var props []Property
+	var err error
 
+	n := 0
 	for n < len(data) {
 		prop, err := DecodePacketIn2Prop(data[n:])
 		if err != nil {
 			break
 		}
-		p.Props = append(p.Props, prop)
-		n += int(prop.Len())
+		props = append(props, prop)
+		n += getPacketIn2PropertyLength(prop)
 	}
+	return props, err
+}
 
-	return nil
+func getPacketIn2PropertyLength(prop Property) int {
+	propPacket, ok := prop.(*PacketIn2PropPacket)
+	if ok {
+		return propPacket.actLength()
+	}
+	return int(prop.Len())
 }
 
 func NewPacketIn2(props []Property) *VendorHeader {
@@ -1286,31 +1315,15 @@ func (p *Resume) Len() (n uint16) {
 }
 
 func (p *Resume) MarshalBinary() (data []byte, err error) {
-	data = make([]byte, p.Len())
-	n := 0
-
-	for _, prop := range p.Props {
-		b, err := prop.MarshalBinary()
-		if err != nil {
-			return nil, err
-		}
-		copy(data[n:], b)
-		n += int(prop.Len())
-	}
-	return
+	return marshalMultipleProperties(p.Props)
 }
 
 func (p *Resume) UnmarshalBinary(data []byte) error {
-	n := 0
-
-	for n < len(data) {
-		prop, err := DecodePacketIn2Prop(data[n:])
-		if err != nil {
-			break
-		}
-		p.Props = append(p.Props, prop)
-		n += int(prop.Len())
+	props, err := unMarshalPacketIn2MultipleProperties(data)
+	if err != nil {
+		return err
 	}
+	p.Props = append(p.Props, props...)
 	return nil
 }
 
@@ -1338,6 +1351,7 @@ func decodeVendorData(experimenterType uint32, data []byte) (msg util.Message, e
 		msg = new(BundleAdd)
 	case Type_PacketIn2:
 		msg = new(PacketIn2)
+		klog.V(7).InfoS("Decoding a PacketIn2 message", "data_length", len(data))
 	}
 	err = msg.UnmarshalBinary(data)
 	if err != nil {
