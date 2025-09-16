@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"syscall"
 
 	"k8s.io/klog/v2"
 )
@@ -192,12 +193,22 @@ func (m *MessageStream) inbound() {
 	for {
 		length, err := getMessageLength(reader)
 		var smallOFErr *smallMessageError
+		var netErr *net.OpError
 		if errors.Is(err, io.EOF) ||
 			// net.ErrClosed may return error message "use of closed network connection".
 			errors.Is(err, net.ErrClosed) ||
 			// The OpenFlow message is invalid because the length is too short.
-			errors.As(err, &smallOFErr) {
+			errors.As(err, &smallOFErr) ||
+			// The OpenFlow connection is dropped by OVS.
+			(errors.As(err, &netErr) && errors.Is(netErr.Err, syscall.ECONNRESET)) {
 			klog.ErrorS(err, "Inbound error is detected")
+			m.Error <- err
+			m.Shutdown <- true
+			return
+		}
+
+		if err != nil {
+			klog.ErrorS(err, "Failed to parse message length")
 			m.Error <- err
 			m.Shutdown <- true
 			return
@@ -213,7 +224,7 @@ func (m *MessageStream) inbound() {
 			return
 		}
 
-		klog.V(7).InfoS("Received message", "length", length)
+		klog.InfoS("Received message", "length", length)
 
 		// Dispatch OpenFlow message
 		xid := binary.BigEndian.Uint32(buff[4:])
